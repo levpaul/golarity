@@ -2,7 +2,10 @@ package magnet
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
+
+	"github.com/levpaul/golarity/src/common"
 )
 
 const (
@@ -12,9 +15,10 @@ const (
 )
 
 type Magnet struct {
-	DisplayName    string   // dn
-	ExactTopic     string   // xt
-	AddressTracker []string // tr
+	DisplayName string // dn
+	// TODO: For backwards compatibility with existing links, clients should also support the Base32 encoded version of the hash
+	ExactTopic     common.Hash // xt - only accepting btih atm
+	AddressTracker []string    // tr
 }
 
 func ParseMagnet(magnetURL string) (*Magnet, error) {
@@ -37,14 +41,25 @@ func ParseMagnet(magnetURL string) (*Magnet, error) {
 			}
 			magnet.DisplayName = splitParam[1]
 		case paramExactTopic:
-			if magnet.ExactTopic != "" {
+			if magnet.ExactTopic != nil {
 				return nil, fmt.Errorf("multiple 'Exact Topic' params found")
 			}
-			magnet.ExactTopic = splitParam[1]
+			// Expect value like: 'urn:btih:E3D418E6B176F3E9FCF9193A78B6AD4DF1D656E4'
+			if len(splitParam[1]) != 49 {
+				return nil, fmt.Errorf("invalid exact topic supplied - accepting only urn:btih values")
+			}
+			magnet.ExactTopic = []byte(splitParam[1][9:])
 		case paramAddressTracker:
 			// This param supports multiple values
-			magnet.AddressTracker = append(magnet.AddressTracker, splitParam[1])
+			decoded, err := url.QueryUnescape(splitParam[1])
+			if err != nil {
+				return nil, fmt.Errorf("could not decode address tracker '%s' - error '%w'", splitParam[1], err)
+			}
+			magnet.AddressTracker = append(magnet.AddressTracker, decoded)
+		default:
+			return nil, fmt.Errorf("unexpected param found, '%s'", splitParam[0])
 		}
+
 	}
 
 	return magnet, nil
